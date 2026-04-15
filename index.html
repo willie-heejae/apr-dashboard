@@ -46,6 +46,14 @@ tr:hover{background:#f5f8ff}
 .g-D{background:#9b59b6}.g-E{background:#95a5a6}.g-Z{background:#7f8c8d}
 .no-data{color:#aaa;font-style:italic}
 @media(max-width:768px){.controls{flex-direction:column;align-items:stretch}.controls input[type=text]{width:100%}td,th{padding:3px 2px;font-size:.68rem}}
+.ai-box{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border-radius:10px;padding:14px 18px;margin:12px auto;max-width:900px;box-shadow:0 2px 8px rgba(102,126,234,.3)}
+.ai-box h3{margin:0 0 8px 0;font-size:.95rem;display:flex;align-items:center;gap:8px}
+.ai-box button{background:#fff;color:#764ba2;border:none;padding:7px 16px;border-radius:6px;font-weight:700;font-size:.82rem;cursor:pointer;transition:all .2s}
+.ai-box button:hover:not(:disabled){background:#f0f0f0;transform:translateY(-1px)}
+.ai-box button:disabled{opacity:.6;cursor:wait}
+.ai-out{background:rgba(255,255,255,.96);color:#222;border-radius:6px;padding:12px 14px;margin-top:10px;font-size:.8rem;line-height:1.6;white-space:pre-wrap;display:none}
+.ai-out.show{display:block}
+.ai-hint{font-size:.72rem;opacity:.85;margin-top:4px}
 </style>
 </head>
 <body>
@@ -77,6 +85,12 @@ tr:hover{background:#f5f8ff}
   <button data-p="sa">토요일</button>
 </div>
 <div class="summary" id="summary"></div>
+<div class="ai-box">
+  <h3>🤖 AI 분석 요약 (Gemini)</h3>
+  <button id="aiBtn" onclick="generateAISummary()">분석 요약 생성</button>
+  <div class="ai-hint">현재 필터/기간 기준 데이터로 인사이트를 생성합니다.</div>
+  <div class="ai-out" id="aiOut"></div>
+</div>
 <div class="table-wrap">
 <table>
 <thead><tr>
@@ -638,6 +652,65 @@ function render(){
       '</tr>';
   });
   tbody.innerHTML=h;
+  window._curList=list;
+}
+
+// Gemini AI Summary
+const GEMINI_KEY="AIzaSyDD1WIi0yA_VOtWH2VWwlfxpO_BWEnZYe8";
+async function generateAISummary(){
+  const btn=document.getElementById('aiBtn');
+  const out=document.getElementById('aiOut');
+  const list=window._curList||[];
+  if(!list.length){out.className='ai-out show';out.textContent='분석할 데이터가 없습니다.';return;}
+  btn.disabled=true;btn.textContent='분석 중...';
+  out.className='ai-out show';out.textContent='Gemini에 요청 중...';
+  const periodLabel={tt:'전체',wd:'주중',fr:'금요일',sa:'토요일'}[currentPeriod]||currentPeriod;
+  let g=0,y=0,r=0,gr=0;
+  list.forEach(x=>{if(x.overall==='green')g++;else if(x.overall==='yellow')y++;else if(x.overall==='red')r++;else gr++;});
+  const topAdrUp=[...list].filter(x=>x.adrPct!=null).sort((a,b)=>b.adrPct-a.adrPct).slice(0,5);
+  const topAdrDn=[...list].filter(x=>x.adrPct!=null).sort((a,b)=>a.adrPct-b.adrPct).slice(0,5);
+  const topOccDn=[...list].filter(x=>x.occDiff!=null).sort((a,b)=>a.occDiff-b.occDiff).slice(0,5);
+  const topOccUp=[...list].filter(x=>x.occDiff!=null).sort((a,b)=>b.occDiff-a.occDiff).slice(0,5);
+  const fmt=arr=>arr.map(x=>`${x.n}(${x.m}/${x.g}) ADR${x.adrPct!=null?(x.adrPct>0?'+':'')+x.adrPct.toFixed(1)+'%':'-'} OCC${x.occDiff!=null?(x.occDiff>0?'+':'')+x.occDiff.toFixed(1)+'%p':'-'}`).join(', ');
+  const prompt=`당신은 숙박업 매출/가동률 분석 전문가입니다. 아래는 25년 4월 대비 26년 4월 ${periodLabel} 기간 데이터입니다.
+
+[전체 현황]
+- 총 ${list.length}개 숙소
+- 🟢 양호: ${g}개, 🟡 보통: ${y}개, 🔴 주의: ${r}개, ⚪ 데이터없음: ${gr}개
+- 신호등 기준: ADR 변동률 ≤-5% 양호, -5~+5% 보통, >+5% 주의 / OCC 변동 ±5%p
+
+[ADR 상승 TOP5 (주의)]
+${fmt(topAdrUp)}
+
+[ADR 하락 TOP5 (양호)]
+${fmt(topAdrDn)}
+
+[OCC 하락 TOP5]
+${fmt(topOccDn)}
+
+[OCC 상승 TOP5]
+${fmt(topOccUp)}
+
+위 데이터를 바탕으로 한국어로 3~5개 불릿으로 요약해주세요:
+1) 전반적 트렌드 한 줄 요약
+2) 가장 주목해야 할 위험 신호 (숙소명 포함)
+3) 긍정적 포인트 또는 벤치마킹할 숙소
+4) CX담당자/그룹 관점의 패턴 (있다면)
+5) 액션 아이템 제안
+불릿마다 간결하게 1~2문장. 과장 없이 데이터 기반으로.`;
+  try{
+    const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.4,maxOutputTokens:800}})
+    });
+    const data=await res.json();
+    if(data.error){out.textContent='❌ 오류: '+data.error.message;}
+    else{
+      const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'응답이 비어있습니다.';
+      out.textContent=text;
+    }
+  }catch(e){out.textContent='❌ 네트워크 오류: '+e.message;}
+  finally{btn.disabled=false;btn.textContent='다시 분석';}
 }
 
 // Events
