@@ -732,25 +732,7 @@ async function sendAIChat(){if(!getGeminiKey()){setGeminiKey();if(!getGeminiKey(
     : [{role:'user',parts:[{text:buildDataContext()}]},
        ...aiHistory.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]})),
        {role:'user',parts:[{text:q}]}];
-  try{
-    const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({contents,generationConfig:{temperature:0.4,maxOutputTokens:4096,thinkingConfig:{thinkingBudget:0}}})
-    });
-    const data=await res.json();
-    loadingDiv.classList.remove('loading');
-    if(data.error){
-      loadingDiv.querySelector('.text').textContent='❌ 오류: '+data.error.message;
-    }else{
-      const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'응답이 비어있습니다.';
-      loadingDiv.querySelector('.text').textContent=text;
-      aiHistory.push({role:'user',text:q});
-      aiHistory.push({role:'bot',text});
-    }
-  }catch(e){
-    loadingDiv.classList.remove('loading');
-    loadingDiv.querySelector('.text').textContent='❌ 네트워크 오류: '+e.message;
-  }finally{
+  try{let data=null;for(let attempt=1;attempt<=4;attempt++){loadingDiv.querySelector('.text').textContent=attempt===1?'생각 중...':'재시도 중... ('+attempt+'/4)';try{const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents,generationConfig:{temperature:0.4,maxOutputTokens:4096,thinkingConfig:{thinkingBudget:0}}})});data=await res.json();const msg=data.error?.message||'';const transient=res.status===503||res.status===429||/high demand|overloaded|UNAVAILABLE|try again/i.test(msg);if(data.error&&transient&&attempt<4){await new Promise(r=>setTimeout(r,1500*attempt));continue;}break;}catch(ne){if(attempt<4){await new Promise(r=>setTimeout(r,1500*attempt));continue;}throw ne;}}loadingDiv.classList.remove('loading');if(data&&data.error){loadingDiv.querySelector('.text').textContent='❌ 오류: '+data.error.message;}else if(data){const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'응답이 비어있습니다.';loadingDiv.querySelector('.text').textContent=text;aiHistory.push({role:'user',text:q});aiHistory.push({role:'bot',text});}}catch(e){loadingDiv.classList.remove('loading');loadingDiv.querySelector('.text').textContent='❌ 네트워크 오류: '+e.message;}finally{
     btn.disabled=false;btn.textContent='전송';
     input.focus();
   }
