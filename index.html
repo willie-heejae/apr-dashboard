@@ -46,14 +46,28 @@ tr:hover{background:#f5f8ff}
 .g-D{background:#9b59b6}.g-E{background:#95a5a6}.g-Z{background:#7f8c8d}
 .no-data{color:#aaa;font-style:italic}
 @media(max-width:768px){.controls{flex-direction:column;align-items:stretch}.controls input[type=text]{width:100%}td,th{padding:3px 2px;font-size:.68rem}}
-.ai-box{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border-radius:10px;padding:14px 18px;margin:12px auto;max-width:900px;box-shadow:0 2px 8px rgba(102,126,234,.3)}
-.ai-box h3{margin:0 0 8px 0;font-size:.95rem;display:flex;align-items:center;gap:8px}
-.ai-box button{background:#fff;color:#764ba2;border:none;padding:7px 16px;border-radius:6px;font-weight:700;font-size:.82rem;cursor:pointer;transition:all .2s}
-.ai-box button:hover:not(:disabled){background:#f0f0f0;transform:translateY(-1px)}
-.ai-box button:disabled{opacity:.6;cursor:wait}
-.ai-out{background:rgba(255,255,255,.96);color:#222;border-radius:6px;padding:12px 14px;margin-top:10px;font-size:.8rem;line-height:1.6;white-space:pre-wrap;display:none}
-.ai-out.show{display:block}
-.ai-hint{font-size:.72rem;opacity:.85;margin-top:4px}
+.ai-box{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border-radius:10px;padding:12px 14px;margin:12px auto;max-width:900px;box-shadow:0 2px 8px rgba(102,126,234,.3)}
+.ai-box h3{margin:0 0 8px 0;font-size:.9rem;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.ai-box h3 .ai-title{display:flex;align-items:center;gap:8px}
+.ai-box h3 .ai-reset{background:rgba(255,255,255,.2);color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:.7rem;cursor:pointer}
+.ai-box h3 .ai-reset:hover{background:rgba(255,255,255,.35)}
+.ai-chat{background:rgba(255,255,255,.96);border-radius:6px;padding:10px;max-height:360px;overflow-y:auto;margin-bottom:8px;display:none}
+.ai-chat.show{display:block}
+.ai-msg{margin-bottom:10px;font-size:.8rem;line-height:1.55}
+.ai-msg:last-child{margin-bottom:0}
+.ai-msg .role{font-weight:700;font-size:.72rem;margin-bottom:3px;display:block}
+.ai-msg.user .role{color:#4a5568}
+.ai-msg.user .text{background:#edf2f7;color:#222;padding:7px 10px;border-radius:6px;white-space:pre-wrap}
+.ai-msg.bot .role{color:#764ba2}
+.ai-msg.bot .text{color:#222;padding:2px 2px;white-space:pre-wrap}
+.ai-msg.loading .text{color:#888;font-style:italic}
+.ai-inputrow{display:flex;gap:6px}
+.ai-inputrow input{flex:1;padding:8px 12px;border:none;border-radius:6px;font-size:.82rem;color:#222;font-family:inherit}
+.ai-inputrow input:focus{outline:2px solid rgba(255,255,255,.6)}
+.ai-inputrow button{background:#fff;color:#764ba2;border:none;padding:8px 16px;border-radius:6px;font-weight:700;font-size:.82rem;cursor:pointer;transition:all .2s}
+.ai-inputrow button:hover:not(:disabled){background:#f0f0f0}
+.ai-inputrow button:disabled{opacity:.6;cursor:wait}
+.ai-hint{font-size:.7rem;opacity:.8;margin-top:6px}
 </style>
 </head>
 <body>
@@ -86,10 +100,13 @@ tr:hover{background:#f5f8ff}
 </div>
 <div class="summary" id="summary"></div>
 <div class="ai-box">
-  <h3>🤖 AI 분석 요약 (Gemini)</h3>
-  <button id="aiBtn" onclick="generateAISummary()">분석 요약 생성</button>
-  <div class="ai-hint">현재 필터/기간 기준 데이터로 인사이트를 생성합니다.</div>
-  <div class="ai-out" id="aiOut"></div>
+  <h3><span class="ai-title">🤖 AI 분석 채팅 (Gemini)</span><button class="ai-reset" onclick="resetAIChat()">대화 초기화</button></h3>
+  <div class="ai-chat" id="aiChat"></div>
+  <div class="ai-inputrow">
+    <input type="text" id="aiInput" placeholder="예: 최준식 담당 숙소 중 ADR이 하락한 곳 알려줘" onkeydown="if(event.key==='Enter')sendAIChat()">
+    <button id="aiSendBtn" onclick="sendAIChat()">전송</button>
+  </div>
+  <div class="ai-hint">현재 필터(담당자/그룹/신호/기간) 기준 데이터로 답변합니다. 필터 변경 후 질문하면 해당 범위로 재분석돼요.</div>
 </div>
 <div class="table-wrap">
 <table>
@@ -655,62 +672,88 @@ function render(){
   window._curList=list;
 }
 
-// Gemini AI Summary
+// Gemini AI Chat
 const GEMINI_KEY="AIzaSyAOQ1Uoh9AJw0f-VP9Pg7u6_WkhOx-Lh0U";
-async function generateAISummary(){
-  const btn=document.getElementById('aiBtn');
-  const out=document.getElementById('aiOut');
+let aiHistory=[];
+function buildDataContext(){
   const list=window._curList||[];
-  if(!list.length){out.className='ai-out show';out.textContent='분석할 데이터가 없습니다.';return;}
-  btn.disabled=true;btn.textContent='분석 중...';
-  out.className='ai-out show';out.textContent='Gemini에 요청 중...';
   const periodLabel={tt:'전체',wd:'주중',fr:'금요일',sa:'토요일'}[currentPeriod]||currentPeriod;
-  let g=0,y=0,r=0,gr=0;
-  list.forEach(x=>{if(x.overall==='green')g++;else if(x.overall==='yellow')y++;else if(x.overall==='red')r++;else gr++;});
-  const topAdrUp=[...list].filter(x=>x.adrPct!=null).sort((a,b)=>b.adrPct-a.adrPct).slice(0,5);
-  const topAdrDn=[...list].filter(x=>x.adrPct!=null).sort((a,b)=>a.adrPct-b.adrPct).slice(0,5);
-  const topOccDn=[...list].filter(x=>x.occDiff!=null).sort((a,b)=>a.occDiff-b.occDiff).slice(0,5);
-  const topOccUp=[...list].filter(x=>x.occDiff!=null).sort((a,b)=>b.occDiff-a.occDiff).slice(0,5);
-  const fmt=arr=>arr.map(x=>`${x.n}(${x.m}/${x.g}) ADR${x.adrPct!=null?(x.adrPct>0?'+':'')+x.adrPct.toFixed(1)+'%':'-'} OCC${x.occDiff!=null?(x.occDiff>0?'+':'')+x.occDiff.toFixed(1)+'%p':'-'}`).join(', ');
-  const prompt=`당신은 숙박업 매출/가동률 분석 전문가입니다. 아래는 25년 4월 대비 26년 4월 ${periodLabel} 기간 데이터입니다.
-
-[전체 현황]
-- 총 ${list.length}개 숙소
-- 🟢 양호: ${g}개, 🟡 보통: ${y}개, 🔴 주의: ${r}개, ⚪ 데이터없음: ${gr}개
+  let g=0,y=0,rc=0,gr=0;
+  list.forEach(x=>{if(x.overall==='green')g++;else if(x.overall==='yellow')y++;else if(x.overall==='red')rc++;else gr++;});
+  const rows=list.map(x=>`${x.c}|${x.n}|${x.m}|${x.g}|ADR25:${x._a25??'-'}|ADR26:${x._a26??'-'}|ADRpct:${x.adrPct!=null?x.adrPct.toFixed(1)+'%':'-'}|OCC25:${x._o25!=null?x._o25.toFixed(1)+'%':'-'}|OCC26:${x._o26!=null?x._o26.toFixed(1)+'%':'-'}|OCCdiff:${x.occDiff!=null?x.occDiff.toFixed(1)+'%p':'-'}|신호:${x.overall}`).join('\n');
+  return `[데이터 컨텍스트 — 25년 4월 vs 26년 4월 ${periodLabel}]
+- 총 ${list.length}개 숙소 (현재 필터 기준)
+- 신호 분포: 🟢양호 ${g}, 🟡보통 ${y}, 🔴주의 ${rc}, ⚪데이터없음 ${gr}
 - 신호등 기준: ADR 변동률 ≤-5% 양호, -5~+5% 보통, >+5% 주의 / OCC 변동 ±5%p
 
-[ADR 상승 TOP5 (주의)]
-${fmt(topAdrUp)}
+[숙소별 상세]
+코드|숙소명|CX담당자|그룹|ADR데이터
+${rows}
 
-[ADR 하락 TOP5 (양호)]
-${fmt(topAdrDn)}
-
-[OCC 하락 TOP5]
-${fmt(topOccDn)}
-
-[OCC 상승 TOP5]
-${fmt(topOccUp)}
-
-위 데이터를 바탕으로 한국어로 3~5개 불릿으로 요약해주세요:
-1) 전반적 트렌드 한 줄 요약
-2) 가장 주목해야 할 위험 신호 (숙소명 포함)
-3) 긍정적 포인트 또는 벤치마킹할 숙소
-4) CX담당자/그룹 관점의 패턴 (있다면)
-5) 액션 아이템 제안
-불릿마다 간결하게 1~2문장. 과장 없이 데이터 기반으로.`;
+위 데이터를 바탕으로 사용자의 질문에 한국어로 간결하고 정확하게 답변해주세요. 숙소명과 수치를 구체적으로 인용하고, 데이터에 없는 내용은 추측하지 마세요.`;
+}
+function appendMsg(role,text,cls){
+  const chat=document.getElementById('aiChat');
+  chat.classList.add('show');
+  const div=document.createElement('div');
+  div.className='ai-msg '+role+(cls?' '+cls:'');
+  div.innerHTML='<span class="role">'+(role==='user'?'나':'Gemini')+'</span><div class="text"></div>';
+  div.querySelector('.text').textContent=text;
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+  return div;
+}
+function resetAIChat(){
+  aiHistory=[];
+  const chat=document.getElementById('aiChat');
+  chat.innerHTML='';
+  chat.classList.remove('show');
+}
+async function sendAIChat(){
+  const input=document.getElementById('aiInput');
+  const btn=document.getElementById('aiSendBtn');
+  const q=input.value.trim();
+  if(!q)return;
+  input.value='';
+  btn.disabled=true;btn.textContent='전송 중...';
+  appendMsg('user',q);
+  const loadingDiv=appendMsg('bot','생각 중...','loading');
+  // On first message, prepend data context
+  const parts=[];
+  if(aiHistory.length===0){
+    parts.push({text:buildDataContext()+'\n\n사용자 질문: '+q});
+  }else{
+    // Include history
+    aiHistory.forEach(m=>parts.push({text:(m.role==='user'?'사용자: ':'assistant: ')+m.text}));
+    parts.push({text:'사용자: '+q});
+  }
+  const contents=aiHistory.length===0
+    ? [{role:'user',parts:[{text:buildDataContext()+'\n\n질문: '+q}]}]
+    : [{role:'user',parts:[{text:buildDataContext()}]},
+       ...aiHistory.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]})),
+       {role:'user',parts:[{text:q}]}];
   try{
     const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.4,maxOutputTokens:800}})
+      body:JSON.stringify({contents,generationConfig:{temperature:0.4,maxOutputTokens:1200}})
     });
     const data=await res.json();
-    if(data.error){out.textContent='❌ 오류: '+data.error.message;}
-    else{
+    loadingDiv.classList.remove('loading');
+    if(data.error){
+      loadingDiv.querySelector('.text').textContent='❌ 오류: '+data.error.message;
+    }else{
       const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'응답이 비어있습니다.';
-      out.textContent=text;
+      loadingDiv.querySelector('.text').textContent=text;
+      aiHistory.push({role:'user',text:q});
+      aiHistory.push({role:'bot',text});
     }
-  }catch(e){out.textContent='❌ 네트워크 오류: '+e.message;}
-  finally{btn.disabled=false;btn.textContent='다시 분석';}
+  }catch(e){
+    loadingDiv.classList.remove('loading');
+    loadingDiv.querySelector('.text').textContent='❌ 네트워크 오류: '+e.message;
+  }finally{
+    btn.disabled=false;btn.textContent='전송';
+    input.focus();
+  }
 }
 
 // Events
