@@ -100,7 +100,7 @@ tr:hover{background:#f5f8ff}
 </div>
 <div class="summary" id="summary"></div>
 <div class="ai-box">
-  <h3><span class="ai-title">🤖 AI 분석 채팅 (Gemini)</span><button class="ai-reset" onclick="resetAIChat()">대화 초기화</button></h3>
+  <h3><span class="ai-title">🤖 AI 분석 채팅 (Gemini)</span><button class="ai-reset" onclick="setGeminiKey()">🔑 API 키</button> <button class="ai-reset" onclick="resetAIChat()">대화 초기화</button></h3>
   <div class="ai-chat" id="aiChat"></div>
   <div class="ai-inputrow">
     <input type="text" id="aiInput" placeholder="예: 최준식 담당 숙소 중 ADR이 하락한 곳 알려줘" onkeydown="if(event.key==='Enter')sendAIChat()">
@@ -673,7 +673,7 @@ function render(){
 }
 
 // Gemini AI Chat
-const GEMINI_KEY="AIzaSyAOQ1Uoh9AJw0f-VP9Pg7u6_WkhOx-Lh0U";
+function getGeminiKey(){return localStorage.getItem("gemini_api_key")||"";}function setGeminiKey(){const cur=localStorage.getItem("gemini_api_key")||"";const k=prompt("Gemini API 키를 입력하세요 (AIzaSy...로 시작).\n\nhttps://aistudio.google.com/apikey 에서 발급.\n이 키는 이 브라우저에만 저장되며 GitHub에 올라가지 않습니다.",cur);if(k&&k.trim()){localStorage.setItem("gemini_api_key",k.trim());alert("저장됨. 이제 질문할 수 있어요.");}}
 let aiHistory=[];
 function buildDataContext(){
   const list=window._curList||[];
@@ -709,7 +709,7 @@ function resetAIChat(){
   chat.innerHTML='';
   chat.classList.remove('show');
 }
-async function sendAIChat(){
+async function sendAIChat(){if(!getGeminiKey()){setGeminiKey();if(!getGeminiKey())return;}
   const input=document.getElementById('aiInput');
   const btn=document.getElementById('aiSendBtn');
   const q=input.value.trim();
@@ -733,7 +733,7 @@ async function sendAIChat(){
        ...aiHistory.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]})),
        {role:'user',parts:[{text:q}]}];
   try{
-    const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,{
+    const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({contents,generationConfig:{temperature:0.4,maxOutputTokens:1200}})
     });
